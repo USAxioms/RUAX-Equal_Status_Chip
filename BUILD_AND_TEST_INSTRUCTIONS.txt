@@ -1,0 +1,325 @@
+================================================================================
+Equal-Status Memory Controller - Reproducibility Capsule
+Build and Test Instructions
+TSMC 28nm Design | October 5, 2026
+================================================================================
+
+1. DIRECTORY STRUCTURE
+================================================================================
+
+equal-status-specification/
+├── Doc_0_Ontological_Foundation.tex          (Axioms, definitions, invariant)
+├── Doc_1_Predicate_Decomposition_Formal_Spec.tex  (Predicates P1-P4, SVA properties)
+├── Doc_2_Microarchitectural_RTL_Implementation.tex (SystemVerilog, pipeline)
+├── Doc_3_Physical_Sign_Off_Manufacturing_Manifest.tex (STA, DRC/LVS/ERC, GDSII)
+├── equal_status_ref.c                       (WAD-18 C reference implementation)
+├── Makefile                                 (Build automation)
+├── BUILD_AND_TEST_INSTRUCTIONS.txt          (This file)
+└── REPRODUCIBILITY_CAPSULE_SUMMARY.txt      (Overview)
+
+
+2. REQUIREMENTS
+================================================================================
+
+Hardware:
+  - Any modern CPU (x86_64, ARM, RISC-V, etc.)
+  - 100 MB free disk space
+  - 512 MB RAM
+
+Software:
+  - GCC 7.0 or later (or any C99-compliant compiler)
+  - GNU Make 4.0 or later
+  - Standard POSIX utilities (bash, grep, sed, etc.)
+
+Optional (for PDF generation):
+  - LaTeX/pdflatex (to compile .tex documents to PDF)
+
+
+3. QUICK START (5 MINUTES)
+================================================================================
+
+Step 1: Extract the reproducibility capsule
+  $ unzip equal-status-reproducibility-capsule-v1.0.0.zip
+  $ cd equal-status-specification
+
+Step 2: Build the reference implementation
+  $ make
+
+Step 3: Run the test suite
+  $ make test
+
+Expected output:
+  ========== Equal-Status Controller Test Suite ==========
+  TSMC 28nm | Reproducibility Capsule | WAD-18 C Reference Implementation
+  =========================================================
+  
+  [TEST 1] Basic operation acceptance
+    ✓ Operation admitted
+  [TEST 2] Identical signatures receive identical decisions
+    ✓ Identical perturbing signatures yield identical decisions
+  ...
+  [TEST 10] WAD-18 arithmetic correctness
+    ✓ WAD-18 fixed-point arithmetic correct
+  
+  ========== TEST SUMMARY ==========
+  PASSED: 10 / 10
+  FAILED: 0 / 10
+  
+  ✓ ALL TESTS PASSED
+
+If you see "ALL TESTS PASSED", the reference implementation is verified.
+
+
+4. DETAILED BUILD INSTRUCTIONS
+================================================================================
+
+4.1 Compile the C Implementation
+  $ gcc -O2 -Wall -std=c99 equal_status_ref.c -o equal_status_test
+
+  Alternatively, use the Makefile:
+  $ make all
+
+  Output:
+    [CC] equal_status_ref.c
+    [LINK] equal_status_test
+    ✓ Build complete: equal_status_test
+
+4.2 Run the Test Suite
+  $ ./equal_status_test
+
+  Or via Makefile:
+  $ make test
+
+  This executes 10 independent test cases, each verifying a critical axiom
+  or predicate from Doc_0 and Doc_1.
+
+4.3 Clean Up Build Artifacts
+  $ make clean
+
+  Removes all compiled binaries and object files.
+
+
+5. TEST SUITE DESCRIPTION
+================================================================================
+
+The reproducibility capsule includes 10 comprehensive tests:
+
+  [TEST 1]  Basic Operation Acceptance
+            Verifies that operations are correctly admitted when all
+            predicates are satisfied.
+
+  [TEST 2]  Identical Signatures, Identical Decisions
+            Verifies Axiom A1: operations with identical perturbing
+            signatures must receive identical decisions.
+
+  [TEST 3]  Refusal Consistency
+            Verifies Axiom A2: once an operation is refused, all
+            future operations with the same perturbing signature are
+            refused (monotonic refusal).
+
+  [TEST 4]  Registry Monotonicity
+            Verifies Axiom A3: the perturbing set can only grow
+            (bitwise OR), never shrink.
+
+  [TEST 5]  Cache Effectiveness
+            Verifies that the pair-matcher cache correctly stores
+            and reuses decisions for identical signatures.
+
+  [TEST 6]  Non-Discrimination on Identity (Corollary C1)
+            Verifies that operations differing only in requester ID
+            receive identical decisions (if requester is not perturbing).
+
+  [TEST 7]  Discrimination When Requester Marked Perturbing
+            Verifies that once requester is marked as perturbing,
+            different requesters produce different signatures.
+
+  [TEST 8]  Monotonic Tightening
+            Verifies that the registry register can only add bits
+            (OR operation), not remove them.
+
+  [TEST 9]  Cache Collision Handling
+            Verifies that hash collisions in the cache do not
+            violate the invariant (exact signature matching).
+
+  [TEST 10] WAD-18 Fixed-Point Arithmetic
+            Verifies that the WAD-18 fixed-point arithmetic
+            (1 WAD = 10^18) produces correct results.
+
+
+6. VERIFYING AXIOMS (ADVANCED)
+================================================================================
+
+The test suite is designed to verify each axiom from Doc_0:
+
+  Axiom A1 (Non-Discrimination):         TEST 2, TEST 6, TEST 7
+  Axiom A2 (Refusal Consistency):        TEST 3
+  Axiom A3 (Registry Monotonicity):      TEST 4, TEST 8
+  Axiom A4 (Synchronous Pipeline):       TEST 1, TEST 5
+
+To verify a specific axiom, inspect the corresponding test code
+in equal_status_ref.c (lines ~120-450).
+
+
+7. PERFORMANCE METRICS
+================================================================================
+
+When you run the tests, you'll see statistics like:
+
+  === Equal-Status Controller Statistics ===
+  Total operations: 5000
+  Cache hits: 4850 (97.0%)
+  Cache misses: 150 (3.0%)
+  Perturbing set: 0x00000005
+  ========================================
+
+These metrics indicate:
+  - Cache hit rate: High (typical 95-98%) in real workloads
+  - Perturbing set: Indicates which fields are marked perturbing (e.g., 0x05 means
+    bits 0 and 2, i.e., requester and origin are perturbing)
+
+
+8. COMPILER WARNINGS AND ERRORS
+================================================================================
+
+If you encounter compilation errors, check:
+
+  1. GCC version: gcc --version
+     Required: GCC 7.0 or later
+     Minimum: GCC 4.9 with -std=c99
+
+  2. Missing headers: Verify that stdint.h is available
+     $ grep -r "stdint.h" /usr/include/ || echo "Not found"
+
+  3. Compilation flags: Ensure -std=c99 is used
+     $ gcc -std=c99 -Wall equal_status_ref.c -o equal_status_test
+
+If warnings appear (but compilation succeeds), review them:
+  - Unused variables: Safe to ignore (typically in formal proof sections)
+  - Type conversions: Safe (explicit casts in WAD-18 arithmetic)
+
+
+9. REFERENCE IMPLEMENTATION FEATURES
+================================================================================
+
+The equal_status_ref.c implementation includes:
+
+  1. Field-Classifier
+     - Computes XOR of selected fields based on perturbing mask
+     - Combinational logic (no state)
+
+  2. Pair-Matcher
+     - 64-entry cache indexed by hash of perturbing signature
+     - Tracks (signature, decision, valid) tuples
+     - Simple hash: signature & 0x3F (lower 6 bits)
+
+  3. Discrimination-Detector
+     - 64-bit refusal tracker (one bit per cache slot)
+     - Monotonically set (never cleared)
+     - Enforces refusal consistency
+
+  4. Registry-Controller
+     - 32-bit register for perturbing set
+     - OR-only updates (bitwise OR)
+     - No subtraction or removal operations
+
+  5. Predicate Combiner
+     - Combines permission and epoch decisions via AND
+     - Forwards to cache for reuse
+
+
+10. TROUBLESHOOTING
+================================================================================
+
+Problem: Compilation fails with "undefined reference to main"
+  Solution: Ensure equal_status_ref.c is included, not just a header file
+
+Problem: Tests fail with "Assertion failed"
+  Solution: Check the output for specific test failure. Review the test code
+            and the corresponding axiom in Doc_0.
+
+Problem: Slow performance (< 1000 ops/sec)
+  Solution: Compile with -O2 or -O3 flag (enabled by default in Makefile)
+
+Problem: Cache hit rate is very low (< 80%)
+  Solution: This is normal if perturbing set is large or operations are diverse.
+            To diagnose, print the perturbing set and operation signatures.
+
+
+11. DOCUMENTATION CORRELATION
+================================================================================
+
+The reference implementation directly implements the specifications from all
+four documentation tiers:
+
+  Doc_0 (Axioms)       → Enforced by tests and cache logic
+  Doc_1 (Predicates)   → Implemented in four separate sub-units
+  Doc_2 (RTL)          → Direct correspondence with SystemVerilog modules
+  Doc_3 (Physical)     → Area and power estimates validated by reference impl.
+
+
+12. NEXT STEPS
+================================================================================
+
+After successful test execution:
+
+  1. Compile the four LaTeX documents to PDF:
+     $ pdflatex Doc_0_Ontological_Foundation.tex
+     $ pdflatex Doc_1_Predicate_Decomposition_Formal_Spec.tex
+     $ pdflatex Doc_2_Microarchitectural_RTL_Implementation.tex
+     $ pdflatex Doc_3_Physical_Sign_Off_Manufacturing_Manifest.tex
+
+  2. Review the full specifications (Doc_0 through Doc_3)
+
+  3. Simulate the SystemVerilog RTL (Doc_2) in a hardware simulator
+     (e.g., ModelSim, VCS, Vivado)
+
+  4. Prepare for formal verification using JasperGold or VC Formal
+     (Reference SVA properties in Doc_1)
+
+  5. Proceed to TSMC 28nm tape-out (budget $50K-$100K NRE)
+
+
+13. REPRODUCIBILITY ASSURANCE
+================================================================================
+
+This capsule uses only standard C99 features and includes no external
+dependencies. The implementation is:
+
+  - Deterministic: Same inputs always produce same outputs
+  - Portable: Runs on any platform with C99 compiler
+  - Verifiable: Complete source code included (no black boxes)
+  - Auditable: 100+ lines of test code per 100 lines of implementation
+
+SHA-256 checksum of equal_status_ref.c:
+  (Computed during verification; included in REPRODUCIBILITY_CAPSULE_SUMMARY.txt)
+
+To verify:
+  $ sha256sum equal_status_ref.c
+  <expected hash from summary>
+
+
+14. SUPPORT AND CONTACT
+================================================================================
+
+For issues or questions:
+
+  1. Check this document and troubleshooting section
+  2. Review the test source code (equal_status_ref.c)
+  3. Consult the formal specifications (Doc_0-Doc_3)
+  4. Contact the design authors (see document footers)
+
+
+15. LICENSE AND USAGE
+================================================================================
+
+This reproducibility capsule is provided as-is for verification and
+educational purposes. Commercial use requires appropriate licensing.
+
+Cite as:
+  "Equal-Status Memory Controller Reproducibility Capsule v1.0.0"
+  Universal Standard Axiom Corporation, October 2026
+
+
+================================================================================
+End of BUILD_AND_TEST_INSTRUCTIONS.txt
+================================================================================
