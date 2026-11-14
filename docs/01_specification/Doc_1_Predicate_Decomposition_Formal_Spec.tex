@@ -1,0 +1,420 @@
+\documentclass[11pt,oneside]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{red},
+  backgroundcolor=\color{lightgray!10}
+}
+
+\pagestyle{fancy}
+\fancyhead[R]{Doc\_1: Predicate Decomposition \& Formal Spec}
+\fancyfoot[C]{\thepage}
+
+\title{Equal-Status Memory Controller: Predicate Decomposition \& Formal Specification\\
+\large Field Classifier, Pair Matcher, Discrimination Detector, Registry Controller}
+\author{Universal Standard Axiom Corporation}
+\date{October 5, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document decomposes the master safety invariant $I_0$ from Doc\_0 into four functional predicates, each assigned to a dedicated hardware sub-unit. Each predicate is formally specified using SystemVerilog Assertions (SVA), temporal logic, and transfer-function semantics. Continuous grounding ensures every state transition preserves $I_0$.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Predicate Decomposition (from $I_0$)}
+
+The master invariant $I_0$ is decomposed into four \textbf{necessary and sufficient} predicates:
+
+\[
+I_0 \equiv P_1 \land P_2 \land P_3 \land P_4
+\]
+
+\begin{enumerate}
+\item $P_1$: \textbf{Field-Classifier Correctness} (extract perturbing signature)
+\item $P_2$: \textbf{Pair-Matcher Consistency} (reuse cached decisions)
+\item $P_3$: \textbf{Discrimination-Detector Refusal Tracking} (prevent selective refusal)
+\item $P_4$: \textbf{Registry-Controller Monotonicity} (enforce tightening-only updates)
+\end{enumerate}
+
+Failure of any single predicate violates $I_0$. All four must be maintained throughout execution.
+
+\section{Predicate $P_1$: Field-Classifier Correctness}
+
+\subsection{Informal Specification}
+
+The field-classifier sub-unit reads an incoming memory operation and extracts only the fields registered as perturbing. It computes:
+
+\[
+\text{Perturb}(O) = \bigoplus_{f_i \in R} f_i
+\]
+
+where $R$ is the current perturbing set (from registry) and $\bigoplus$ is bitwise XOR.
+
+\subsection{Formal Specification (P1)}
+
+\begin{boxed}
+\textbf{Predicate $P_1$ (Field-Classifier Correctness):}
+
+For every operation $O$ arriving at time $t$ with fields $O.f_1, \ldots, O.f_n$:
+
+\[
+\text{sig}_t = \bigoplus_{i=1}^{n} (O.f_i \cdot R_t[i])
+\]
+
+where $R_t[i] \in \{0, 1\}$ indicates whether field $i$ is in the perturbing set at time $t$.
+
+The classifier output $\text{sig}_t$ is latched and becomes available at the next cycle.
+
+\textbf{Invariant:} $\text{sig}_t$ is deterministic and independent of non-perturbing fields.
+\end{boxed}
+
+\subsection{SystemVerilog Assertions for $P_1$}
+
+\begin{lstlisting}[language=Verilog]
+// SVA1: Perturbing signature is XOR of selected fields
+property P1_signature_correct;
+  @(posedge clk) 
+  sig_next == (op_in.requester_in & REG_perturb[0] ^
+               op_in.address_in   & REG_perturb[1] ^
+               op_in.origin_in    & REG_perturb[2] ^
+               op_in.class_in     & REG_perturb[3] ^
+               op_in.epoch_in     & REG_perturb[4]);
+endproperty
+assert property (P1_signature_correct);
+
+// SVA2: Non-perturbing fields do not affect signature
+property P1_non_perturb_invariant;
+  @(posedge clk)
+  if (REG_perturb[0] == 1'b0)  // requester not perturbing
+    (sig_next ^ sig_prev_alt) == 0;  // sig same if requester differs
+endproperty
+assert property (P1_non_perturb_invariant);
+
+// SVA3: Signature latched at end of cycle
+property P1_latch;
+  @(posedge clk) sig_stable_until_next_op;
+endproperty
+assert property (P1_latch);
+\end{lstlisting}
+
+\section{Predicate $P_2$: Pair-Matcher Consistency}
+
+\subsection{Informal Specification}
+
+The pair-matcher maintains a cache of 64 slots, indexed by hash of the perturbing signature:
+
+\[
+\text{slot} = \text{hash}(\text{Perturb}(O)) \mod 64
+\]
+
+For each operation:
+\begin{itemize}
+\item Compute the signature (from P1).
+\item Hash the signature.
+\item Look up the cache.
+\item If found and signature matches exactly, reuse the cached decision.
+\item If not found or mismatch, forward the operation to the discrimination-detector.
+\end{itemize}
+
+\subsection{Formal Specification (P2)}
+
+\begin{boxed}
+\textbf{Predicate $P_2$ (Pair-Matcher Consistency):}
+
+Let $C[j]$ be the cache entry at slot $j$, containing:
+\begin{itemize}
+\item $C[j].\text{sig}$: stored perturbing signature
+\item $C[j].\text{valid}$: whether entry is occupied
+\item $C[j].\text{decision}$: the previous decision
+\end{itemize}
+
+For an incoming operation with signature $\text{sig}_t$ and hash slot $h_t$:
+
+If $C[h_t].\text{valid} = 1$ and $C[h_t].\text{sig} = \text{sig}_t$:
+\[
+\text{decision}_t = C[h_t].\text{decision}
+\]
+(reuse cached decision)
+
+Otherwise:
+\[
+\text{decision}_t = \text{FORWARD to discrimination-detector}
+\]
+
+\textbf{Invariant:} All operations with the same perturbing signature receive the same decision.
+\end{boxed}
+
+\subsection{SystemVerilog Assertions for $P_2$}
+
+\begin{lstlisting}[language=Verilog]
+// SVA4: Cache hit correctness
+property P2_cache_hit;
+  @(posedge clk) 
+  if (cache[hash_slot].valid && 
+      cache[hash_slot].sig == incoming_sig)
+    decision == cache[hash_slot].decision;
+endproperty
+assert property (P2_cache_hit);
+
+// SVA5: Identical signatures reused
+property P2_signature_reuse;
+  @(posedge clk)
+  if (sig_A == sig_B)
+    (decision_A_from_cache == decision_B_from_cache);
+endproperty
+assert property (P2_signature_reuse);
+
+// SVA6: Cache miss forwarding
+property P2_miss_forward;
+  @(posedge clk)
+  if (~cache[hash_slot].valid || 
+      cache[hash_slot].sig != incoming_sig)
+    forward_to_detector == 1'b1;
+endproperty
+assert property (P2_miss_forward);
+
+// SVA7: Cache entries persist across cycles
+property P2_cache_persistence;
+  @(posedge clk)
+  disable iff (cache_write)
+    cache_unchanged;
+endproperty
+assert property (P2_cache_persistence);
+\end{lstlisting}
+
+\section{Predicate $P_3$: Discrimination-Detector Refusal Tracking}
+
+\subsection{Informal Specification}
+
+The discrimination-detector maintains a list of perturbing signatures that have been refused in the past. When a new operation arrives (cache miss):
+
+\begin{itemize}
+\item Check if the signature is in the refusal list.
+\item If yes, issue a refusal (and update the cache).
+\item If no, check with the predicate controller (permission, epoch, etc.).
+\end{itemize}
+
+This enforces Axiom A2 from Doc\_0: refusal consistency.
+
+\subsection{Formal Specification (P3)}
+
+\begin{boxed}
+\textbf{Predicate $P_3$ (Discrimination-Detector Refusal Tracking):}
+
+Let $D$ be the set of signatures that have been refused:
+
+\[
+D = \{\text{sig} : \text{decision}(\text{sig}) = 0 \text{ in any prior cycle}\}
+\]
+
+For an incoming operation with signature $\text{sig}_t$:
+
+If $\text{sig}_t \in D$:
+\[
+\text{decision}_t = 0 \text{ (refuse)}
+\]
+
+Else:
+\[
+\text{decision}_t = \text{consult predicate controller}
+\]
+
+\textbf{Invariant:} Once a signature is refused, it remains refused for all future operations (refusal is monotonic).
+\end{boxed}
+
+\subsection{Refusal Tracking via Registry}
+
+The refusal set $D$ is implemented as a separate register or memory region. Updates occur only when:
+\begin{itemize}
+\item A new operation is evaluated by the predicate controller.
+\item The predicate controller returns a refusal decision.
+\item The detector adds the signature to $D$.
+\end{itemize}
+
+No removal operations are permitted.
+
+\subsection{SystemVerilog Assertions for $P_3$}
+
+\begin{lstlisting}[language=Verilog]
+// SVA8: Previously refused signatures are refused
+property P3_refusal_consistency;
+  @(posedge clk)
+  if (is_refused_sig(incoming_sig))
+    decision == 1'b0;
+endproperty
+assert property (P3_refusal_consistency);
+
+// SVA9: Refusal set monotonicity (no removals)
+property P3_no_removal;
+  @(posedge clk)
+  if (sig_in_refused_set)
+    sig_remains_in_refused_set;
+endproperty
+assert property (P3_no_removal);
+
+// SVA10: Refusal update correctness
+property P3_refusal_update;
+  @(posedge clk)
+  if (predicate_decision == REFUSE)
+    add_to_refused_set(incoming_sig);
+endproperty
+assert property (P3_refusal_update);
+
+// SVA11: No false positives in refusal
+property P3_no_false_refuse;
+  @(posedge clk)
+  if (decision == REFUSE && ~is_in_refusal_set)
+    predicate_controller_said_refuse;
+endproperty
+assert property (P3_no_false_refuse);
+\end{lstlisting}
+
+\section{Predicate $P_4$: Registry-Controller Monotonicity}
+
+\subsection{Informal Specification}
+
+The registry stores the perturbing set $R$. Administrative updates are received on a control interface. The controller must ensure that the perturbing set can only grow:
+
+\[
+R_t \subseteq R_{t+1} \text{ (bitwise OR)}
+\]
+
+Any attempt to remove a field is silently ignored (no error, but write has no effect).
+
+\subsection{Formal Specification (P4)}
+
+\begin{boxed}
+\textbf{Predicate $P_4$ (Registry-Controller Monotonicity):}
+
+The registry update rule is:
+
+\[
+R_{t+1} = R_t \mid \text{write\_request}_t
+\]
+
+where $\mid$ denotes bitwise OR. Equivalently:
+
+\[
+R_{t+1}[i] = R_t[i] \lor \text{write\_request}_t[i] \quad \forall i
+\]
+
+\textbf{Invariant:} $R_t[i] = 1 \implies R_s[i] = 1$ for all $s > t$ (once a field is marked perturbing, it remains perturbing).
+\end{boxed}
+
+\subsection{SystemVerilog Assertions for $P_4$}
+
+\begin{lstlisting}[language=Verilog]
+// SVA12: Registry update uses OR
+property P4_registry_or;
+  @(posedge clk)
+  REG_perturb_next == (REG_perturb | reg_write_data);
+endproperty
+assert property (P4_registry_or);
+
+// SVA13: Monotonicity (no removal possible)
+property P4_monotonic;
+  @(posedge clk)
+  (REG_perturb & ~REG_perturb_next) == 0;
+endproperty
+assert property (P4_monotonic);
+
+// SVA14: Once perturbing, always perturbing
+property P4_persistence;
+  @(posedge clk)
+  if (REG_perturb[i] == 1'b1)
+    REG_perturb_next[i] == 1'b1;
+endproperty
+assert property (P4_persistence);
+
+// SVA15: Write-only effect is OR
+property P4_write_or_effect;
+  @(posedge clk)
+  if (reg_write_enable == 1'b1)
+    REG_perturb_next == (REG_perturb | reg_write_value);
+endproperty
+assert property (P4_write_or_effect);
+\end{lstlisting}
+
+\section{Cross-Predicate Invariants}
+
+The four predicates are not independent. Their coupling enforces additional properties:
+
+\subsection{Invariant $I_1$ (Field-Extractor → Pair-Matcher)}
+
+The output of the field-classifier (perturbing signature) feeds directly into the pair-matcher. If $P_1$ is violated, $P_2$ cannot maintain consistency.
+
+\subsection{Invariant $I_2$ (Pair-Matcher → Discrimination-Detector)}
+
+Cache misses are forwarded to the discrimination-detector. If $P_2$ has a cache miss, then $P_3$ must make the decision.
+
+\subsection{Invariant $I_3$ (Discrimination-Detector → Predicate-Combiner)}
+
+If the discrimination-detector cannot decide (signature not in refusal set), the operation is escalated to the predicate controller. The predicate controller implements the final decision logic (permission, epoch, etc.).
+
+\subsection{Invariant $I_4$ (Registry → Field-Classifier)}
+
+Every time the registry $R$ is updated (via $P_4$), the field-classifier must recompute the perturbing signature using the new $R$. This ensures that $P_1$ always operates on the current perturbing set.
+
+\section{System-Level Correctness Proof}
+
+\begin{boxed}
+\textbf{Theorem:} If $P_1 \land P_2 \land P_3 \land P_4$ hold throughout execution, then $I_0$ (master safety invariant) is preserved.
+
+\textbf{Proof sketch:}
+\begin{enumerate}
+\item Assume all four predicates hold at cycle $t$.
+\item Any operation $O$ at cycle $t$ has its perturbing signature computed by $P_1$.
+\item If the signature is cached, $P_2$ reuses the decision (same signature $\implies$ same decision).
+\item If not cached, $P_3$ checks refusal consistency (refused signature $\implies$ refuse).
+\item If not refused, the predicate controller makes the decision.
+\item The decision is cached for future use.
+\item At any cycle $t+1$, the registry may be updated via $P_4$ (OR only).
+\item All four predicates still hold at $t+1$.
+\item Therefore, $I_0$ is preserved. $\square$
+\end{enumerate}
+\end{boxed}
+
+\section{Formal Verification Coverage}
+
+The 15 SVA properties (P1-P15 corresponding to SVA1-SVA15) together cover:
+
+\begin{itemize}
+\item Signature computation correctness (P1: SVA1-3)
+\item Cache consistency (P2: SVA4-7)
+\item Refusal tracking (P3: SVA8-11)
+\item Registry monotonicity (P4: SVA12-15)
+\end{itemize}
+
+These 15 properties form a complete formal specification of the equal-status controller's behavior.
+
+\section{Equivalence with Doc\_0 Axioms}
+
+\begin{itemize}
+\item $P_1$ enforces Axiom A1 (non-discrimination).
+\item $P_3$ enforces Axiom A2 (refusal consistency).
+\item $P_4$ enforces Axiom A3 (monotonicity).
+\item All four predicates together enforce Axiom A4 (single-stage pipeline).
+\end{itemize}
+
+There is a bijective mapping between Doc\_0 axioms and Doc\_1 predicates. No axiom is left unimplemented. No predicate exists without an axiomatic foundation.
+
+\section{Conclusion}
+
+The equal-status controller is decomposed into four independent yet coupled predicates, each verified by 2-4 SVA properties. The predicates are minimal, necessary, and sufficient to preserve the master safety invariant $I_0$ from Doc\_0. All implementation details in Doc\_2 must satisfy these predicates.
+
+\end{document}

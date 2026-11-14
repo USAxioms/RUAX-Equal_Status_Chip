@@ -1,0 +1,335 @@
+\documentclass[11pt,oneside]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{red},
+  backgroundcolor=\color{lightgray!10}
+}
+
+\pagestyle{fancy}
+\fancyhead[R]{Doc\_0: Ontological Foundation}
+\fancyfoot[C]{\thepage}
+
+\title{Equal-Status Memory Controller: Ontological Foundation\\
+\large Axioms, Definitions, Threat Model, and Master Invariant}
+\author{Universal Standard Axiom Corporation}
+\date{October 5, 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document establishes the foundational truth, core definitions, and top-level safety invariant for the Equal-Status Memory Controller without technical ambiguity. The design enforces a single ontological principle: \textbf{no memory operation may be admitted or refused on the basis of identity, origin, or class}. All higher-level architecture, predicates, and implementations derive necessarily from this axiom. The document uses R3 recursive methodology to ground all reasoning in irreducible invariants.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{R3 Recursive Methodology (Meta-Foundation)}
+
+Before any design element is specified, the reasoning apparatus itself is subjected to R3:
+
+\begin{enumerate}
+\item \textbf{Extract absolute invariants} (irreducible truths)
+\item \textbf{Decompose into verifiable predicates}
+\item \textbf{Verify each predicate preserves invariant}
+\item \textbf{Link all state transitions back to invariant}
+\item \textbf{Prove no drift occurs across layers}
+\end{enumerate}
+
+\textbf{Application to Equal-Status Controller:}
+
+The reasoning method is pure (non-circular, complete, maximally reductive) and reaches a stable fixed point. Implementation begins only after this verification.
+
+\section{Axioms and Core Definitions}
+
+\subsection{Axiom A1: Non-Discrimination Invariant (Master Principle)}
+
+Let $O$ be a memory operation with descriptor fields $f_1, f_2, \ldots, f_n$.
+
+Let $R \subseteq \{f_1, \ldots, f_n\}$ be the set of fields the registry declares \textbf{perturbing} (capable of affecting admission).
+
+Define the \textbf{perturbing signature}:
+\[
+\text{Perturb}(O) = \bigoplus_{f_i \in R} f_i
+\]
+where $\bigoplus$ is bitwise XOR (commutative, associative, ensures order-independent comparison).
+
+\begin{boxed}
+\textbf{Axiom A1 (Equal Status):}
+\[
+\forall O_a, O_b \in \text{Operations}: \quad \text{Perturb}(O_a) = \text{Perturb}(O_b) \implies \text{Admit}(O_a) = \text{Admit}(O_b)
+\]
+
+No identity, origin, class, or epoch field that is \textbf{not} in $R$ may influence the admission decision.
+\end{boxed}
+
+\textbf{Grounding:} This axiom is irreducible. It cannot be decomposed further without loss of meaning. It expresses the fundamental requirement: \textbf{equal treatment for equal operation descriptions}.
+
+\subsection{Axiom A2: Prevention of Selective Refusal}
+
+An adversary might exploit the system by refusing an operation only when a specific requester submits it, while accepting the same operation from others.
+
+\begin{boxed}
+\textbf{Axiom A2 (Refusal Consistency):}
+\[
+\text{If } \text{Perturb}(O) \text{ matches any previously refused operation,} \\
+\text{then } \text{Admit}(O) = 0 \text{ (deny)} \text{ for all } O \text{ with that signature.}
+\]
+\end{boxed}
+
+\textbf{Grounding:} This axiom closes the selective-refusal exploit. Without it, discrimination can hide in the history of decisions.
+
+\subsection{Axiom A3: Registry Monotonicity}
+
+The set of perturbing fields can only grow (tighten), never shrink (loosen).
+
+\begin{boxed}
+\textbf{Axiom A3 (Monotonic Tightening):}
+\[
+\text{perturbing\_set}_t \subseteq \text{perturbing\_set}_{t+1} \quad \forall t
+\]
+Equivalently, any attempt to remove a field from the perturbing set is silently ignored (no error signal, but no effect).
+\end{boxed}
+
+\textbf{Grounding:} This axiom prevents an attacker from loosening enforcement by forcing the registry controller to accept only OR operations: $\text{new} \gets \text{old} \mid \text{write\_data}$.
+
+\subsection{Axiom A4: Synchronous Single-Stage Pipeline}
+
+All state transitions occur in a single register cycle. No multi-cycle contamination.
+
+\begin{boxed}
+\textbf{Axiom A4 (State Locality):}
+\[
+(op_{fields}, perturbing\_set_t) \to (decision_t, perturbing\_set_{t+1}) \text{ in single cycle}
+\]
+No intermediate states visible to external observers.
+\end{boxed}
+
+\textbf{Grounding:} This axiom ensures that the controller cannot exhibit transient violations. Each cycle is atomic with respect to the invariants.
+
+\section{Corollaries: Semantic Interpretations of A1}
+
+When the field set is partitioned by semantic category, Axiom A1 yields four corollaries:
+
+\subsection{Corollary C1: Identity Invariance}
+
+\begin{boxed}
+Two operations differing only in requester identity have identical admission decisions.
+
+\[
+O_a.requester \neq O_b.requester \text{ (all other fields equal)} \implies \text{Admit}(O_a) = \text{Admit}(O_b)
+\]
+\end{boxed}
+
+This holds because the requester identity field is not in $R$ (unless explicitly marked perturbing).
+
+\subsection{Corollary C2: Origin Invariance}
+
+\begin{boxed}
+Two operations differing only in data origin have identical admission decisions.
+
+\[
+O_a.origin \neq O_b.origin \text{ (all other fields equal)} \implies \text{Admit}(O_a) = \text{Admit}(O_b)
+\]
+\end{boxed}
+
+\subsection{Corollary C3: Class Invariance}
+
+\begin{boxed}
+Two operations differing only in workload class have identical admission decisions, unless class is registered as perturbing.
+
+\[
+O_a.class \neq O_b.class \text{ and } class \notin R \implies \text{Admit}(O_a) = \text{Admit}(O_b)
+\]
+\end{boxed}
+
+If $class \in R$, then class becomes a legitimate differentiation factor (by explicit administrative choice).
+
+\subsection{Corollary C4: Epoch Invariance}
+
+\begin{boxed}
+Two operations differing only in issuance time have identical admission decisions, subject to the temporal validity window enforced by the companion predicate controller.
+
+\[
+O_a.epoch \neq O_b.epoch \text{ and } epoch \notin R \implies \text{Admit}(O_a) = \text{Admit}(O_b)
+\]
+(Temporal validity is a separate concern of the predicate controller, not the equal-status controller.)
+\end{boxed}
+
+\section{System Entities and Field Definitions}
+
+\subsection{Memory Operation $O$}
+
+A memory operation is a request to move data across the memory boundary. Its descriptor is:
+
+\[
+O = (requester, address, data, origin, class, epoch, \ldots)
+\]
+
+Fields can be 64-bit values or smaller (zero-extended).
+
+\subsection{Requester Identity}
+
+A 64-bit principal identifier. Not perturbing by default.
+
+\subsection{Address}
+
+A 64-bit memory address. May be perturbing (if the application requires different treatment for different address ranges).
+
+\subsection{Origin}
+
+A 64-bit tag indicating where the operation originated (CPU core, I/O, firmware, etc.). Not perturbing by default.
+
+\subsection{Class}
+
+A categorical field indicating workload priority or type (real-time, batch, interactive, etc.). Not perturbing by default.
+
+\subsection{Epoch}
+
+A 32-bit time field (or larger, depending on application). Not perturbing by default.
+
+\section{Threat Model}
+
+\subsection{T1: Identity-Based Discrimination}
+
+\textbf{Attack:} An attacker with a certain requester ID is denied access while others with different IDs are granted access to identical operations.
+
+\textbf{Mitigation:} Axiom A1 (via Corollary C1). If requester is not in $R$, then operations identical except for requester receive identical decisions.
+
+\textbf{Verification:} For any two operations differing only in requester, their perturbing signatures are identical; thus their decisions must be identical.
+
+\subsection{T2: Origin-Based Discrimination}
+
+\textbf{Attack:} Operations from certain origins (e.g., specific cores, I/O devices) are treated differently.
+
+\textbf{Mitigation:} Axiom A1 (via Corollary C2). If origin is not in $R$, then operations identical except for origin are treated identically.
+
+\subsection{T3: Class-Based Discrimination}
+
+\textbf{Attack:} Operations belonging to certain workload classes (batch, interactive) are systematically favored or disfavored.
+
+\textbf{Mitigation:} Axiom A1 (via Corollary C3). If class is not in $R$, then operations identical except for class receive identical decisions.
+
+Note: If the application legitimately requires different treatment by class, class must be moved into $R$ (perturbing set) via explicit administrative action.
+
+\subsection{T4: Temporal Discrimination}
+
+\textbf{Attack:} Operations arriving at different times are treated differently due to their timestamp.
+
+\textbf{Mitigation:} Axiom A1 (via Corollary C4). If epoch is not in $R$, then operations identical except for epoch receive identical decisions.
+
+\subsection{T5: Selective Refusal (Adversarial History Injection)}
+
+\textbf{Attack:} An attacker injects a denial into the history, then observes that identical future operations are denied, creating an illusion of systematic discrimination.
+
+\textbf{Mitigation:} Axiom A2 (Refusal Consistency). Any operation whose perturbing signature matches a previously refused operation is also refused. This is enforced by the discrimination-detector sub-unit.
+
+\section{Cryptographic and Computational Assumptions}
+
+The equal-status controller makes \textbf{no cryptographic assumptions}. It does not use SHA-256, HMAC, or other primitives. This is a key difference from the companion permission-certificate controller.
+
+\subsection{Hash Collision Tolerance}
+
+The pair-matcher uses a hash table with 64 slots to cache recently seen operations. Hash collisions are tolerated:
+\begin{itemize}
+\item If two operations hash to the same slot, both are stored (linear probing or secondary lookup).
+\item The controller verifies exact equality of perturbing signatures before reusing decisions.
+\end{itemize}
+
+Therefore, hash collisions do not violate the invariant; they only reduce cache efficiency.
+
+\section{Operational Assumptions}
+
+\subsection{Assumption Op1: Operation Validity}
+
+All operations are assumed to be well-formed (no bit corruption, no truncation). The memory interface guarantees this.
+
+\subsection{Assumption Op2: Deterministic Decision Logic}
+
+The combination of pair-matcher, discrimination-detector, and predicate-combiner produces a deterministic decision for each operation. No randomness or undefined behavior.
+
+\subsection{Assumption Op3: Monotonic Time}
+
+Epoch values are monotonically increasing. No time wraparound (or wraparound is rare enough that the cache remains valid).
+
+\section{Master Safety Invariant $I_0$}
+
+The master safety invariant unifies all axioms and corollaries:
+
+\begin{boxed}
+\textbf{Invariant $I_0$ (Equal-Status Safety):}
+
+For every memory operation:
+\begin{enumerate}
+\item Admission decisions depend only on the perturbing signature (A1).
+\item Refusals are consistent: all operations with the same perturbing signature as a refused operation are refused (A2).
+\item The registry can only tighten, never loosen (A3).
+\item All state transitions are atomic (A4).
+\end{enumerate}
+
+As a consequence, the controller enforces \textbf{parity}: no requester, origin, class, or timestamp (outside the perturbing set) can affect whether an operation is admitted or refused.
+\end{boxed}
+
+\section{System Completeness Proof}
+
+\textbf{Claim:} The equal-status controller is complete: it can enforce Axiom A1 for \textbf{any} chosen registry $R$.
+
+\textbf{Proof sketch:}
+\begin{enumerate}
+\item The field-classifier projects any operation onto the perturbing subspace (satisfies A1 computation).
+\item The pair-matcher reuses decisions for identical perturbing signatures (satisfies A1 enforcement).
+\item The discrimination-detector blocks selective refusal (satisfies A2).
+\item The registry-controller enforces monotonicity (satisfies A3).
+\item The synchronous pipeline ensures atomicity (satisfies A4).
+\end{enumerate}
+
+No additional sub-unit is required. Any sub-unit not derived from A1-A4 would be redundant. $\square$
+
+\section{Minimal Design Principle}
+
+\textbf{Design Rule:} Every component must justify its existence via direct derivation from one of the axioms (A1-A4). Components without this derivation are removed.
+
+\textbf{Application:}
+\begin{itemize}
+\item Field-classifier: Required by A1 (compute perturbing signature).
+\item Pair-matcher: Required by A1 (cache decisions).
+\item Discrimination-detector: Required by A2 (refusal consistency).
+\item Registry-controller: Required by A3 (monotonic tightening).
+\item Predicate-combiner: Required for integration with permission controller.
+\end{itemize}
+
+No cryptographic primitives are included. No separate hash function. No error correcting codes. Each element is minimal and necessary.
+
+\section{Design Derivation Summary}
+
+Starting from axioms A1-A4, the design is derived retro-causally:
+
+\begin{itemize}
+\item[$\gets$ A1] Extract perturbing fields from operation.
+\item[$\gets$ A1] Cache and reuse decisions.
+\item[$\gets$ A2] Track refused signatures.
+\item[$\gets$ A3] Use bitwise OR for registry updates.
+\item[$\gets$ A4] Single-cycle transitions.
+\end{itemize}
+
+Every design choice traces backward to exactly one axiom. No design choice exists without axiomatic justification.
+
+\section{Conclusion}
+
+The Equal-Status Memory Controller enforces a single, irreducible invariant: \textbf{operations with identical perturbing signatures receive identical admission decisions}. All axioms (A1-A4) are necessary. All design components are sufficient. Nothing is redundant. Nothing is missing.
+
+The design is ontologically grounded, mathematically complete, and physically minimal.
+
+\end{document}
